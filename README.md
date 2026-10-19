@@ -108,7 +108,3 @@ Runtime files are written under `data/` by default. Keep that directory private:
 - Vendor outlier checks need sufficient invoice history. Benford analysis is intended for batches, not individual invoices.
 - The included benchmark is small and synthetic. It is useful for exercising the pipeline, not for claiming production accuracy or real-world fraud detection rates.
 - Live evaluation and hardware profiling require the local inference services and target hardware.
-
-## License
-
-No license is currently included. Add a license before granting others permission to use, modify, or redistribute this project.
