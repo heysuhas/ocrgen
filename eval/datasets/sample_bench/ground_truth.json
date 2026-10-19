@@ -1,0 +1,83 @@
+[
+  {
+    "id": "bench-001",
+    "file_path": "/home/suhast/Personal/Projects/ocrgen/eval/datasets/sample_bench/inv_acme_001.pdf",
+    "layout": "standard",
+    "ground_truth": {
+      "vendor_name": "Acme Cloud Infrastructure Inc",
+      "vendor_tax_id": "US-94-3321908",
+      "invoice_number": "INV-2026-1041",
+      "invoice_date": "2026-05-04",
+      "due_date": "2026-06-03",
+      "currency": "USD",
+      "subtotal": 1450.0,
+      "tax_total": 116.0,
+      "total": 1566.0,
+      "bank_details": "US88ACME0009876543",
+      "line_items": [
+        {
+          "description": "Dedicated A100 GPU Instance",
+          "quantity": 2,
+          "unit_price": 600.0,
+          "amount": 1200.0
+        },
+        {
+          "description": "NVMe Block Storage 5TB",
+          "quantity": 1,
+          "unit_price": 250.0,
+          "amount": 250.0
+        }
+      ]
+    }
+  },
+  {
+    "id": "bench-002",
+    "file_path": "/home/suhast/Personal/Projects/ocrgen/eval/datasets/sample_bench/inv_hyperion_002.png",
+    "layout": "standard",
+    "ground_truth": {
+      "vendor_name": "Hyperion Precision Optics GmbH",
+      "vendor_tax_id": "DE298441023",
+      "invoice_number": "HYP-88201",
+      "invoice_date": "2026-05-06",
+      "due_date": "2026-06-05",
+      "currency": "EUR",
+      "subtotal": 2400.0,
+      "tax_total": 456.0,
+      "total": 2856.0,
+      "bank_details": "DE89370400440532013000",
+      "line_items": [
+        {
+          "description": "Laser Interferometer Sensor",
+          "quantity": 3,
+          "unit_price": 800.0,
+          "amount": 2400.0
+        }
+      ]
+    }
+  },
+  {
+    "id": "bench-003",
+    "file_path": "/home/suhast/Personal/Projects/ocrgen/eval/datasets/sample_bench/inv_vanguard_003.pdf",
+    "layout": "compact",
+    "ground_truth": {
+      "vendor_name": "Vanguard Industrial Robotics Ltd",
+      "vendor_tax_id": "GB774910221",
+      "invoice_number": "VG-2026-077",
+      "invoice_date": "2026-05-08",
+      "due_date": "2026-06-07",
+      "currency": "GBP",
+      "subtotal": 920.0,
+      "tax_total": 184.0,
+      "total": 1104.0,
+      "bank_details": "GB29NWBK60161331926819",
+      "line_items": [
+        {
+          "description": "Harmonic Drive Actuator Module",
+          "quantity": 4,
+          "unit_price": 230.0,
+          "amount": 920.0
+        }
+      ]
+    }
+  }
+]

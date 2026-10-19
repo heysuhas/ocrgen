@@ -1,0 +1,17 @@
+[project]
+name = "ocrgen-paddle-worker"
+version = "0.1.0"
+description = "Lightweight PaddleOCR-VL-1.6 Document Parser Worker with VRAM Auto-Offload"
+requires-python = ">=3.11"
+dependencies = [
+    "pillow>=10.0.0",
+    "transformers>=5.0.0",
+    "torch>=2.4.0",
+    "safetensors>=0.4.0",
+    "accelerate>=1.0.0",
+]
+
+[project.optional-dependencies]
+paddle = [
+    "paddleocr[doc-parser]>=3.6.0",
+]
