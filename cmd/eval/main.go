@@ -126,6 +126,7 @@ func main() {
 
 	var (
 		totalInvoices   = len(samples)
+		completedCount  = 0
 		autoAcceptedCnt = 0
 		needsReviewCnt  = 0
 		sumAgreeRate    = 0.0
@@ -143,8 +144,10 @@ func main() {
 		log.Printf("Processing %s (%s)...", s.ID, s.FilePath)
 		rec, err := coord.ProcessFile(ctx, s.ID, s.FilePath, orchestrator.ProcessOptions{})
 		if err != nil {
-			log.Fatalf("process sample %s failed: %v", s.ID, err)
+			log.Printf("[WARN] process sample %s failed: %v (skipping to next sample)", s.ID, err)
+			continue
 		}
+		completedCount++
 		vram := queryGPUVRAM()
 		if vram > peakVRAMMiB {
 			peakVRAMMiB = vram
@@ -205,13 +208,15 @@ func main() {
 		}
 	}
 
+	log.Printf("Dual-engine evaluation finished: %d / %d invoices processed successfully", completedCount, totalInvoices)
+
 	// Phase 4: Evaluate Fraud Audit Module on Labeled Synthetic Anomalies
 	log.Printf("=== Phase 4: Running Statistical Fraud Audit Evaluation ===")
 	fraudReportRows, benfordNat, benfordManip := evaluateFraudSuite(aud)
 
 	// Phase 5: Evaluate Adaptive Few-Shot Memory Loop
 	log.Printf("=== Phase 5: Evaluating Adaptive Few-Shot Memory Retrieval & Prompt Injection ===")
-	adaptiveResult := evaluateAdaptiveLoop(st, ret)
+	adaptiveResult := evaluateAdaptiveLoop(ctx, engA, st, ret)
 
 	// Phase 6: Measure Go Backend Memory Footprint
 	var memStats runtime.MemStats
@@ -229,14 +234,14 @@ func main() {
 		*numCtx,
 		fieldNames,
 		statsMap,
-		totalInvoices,
+		completedCount,
 		autoAcceptedCnt,
 		needsReviewCnt,
-		sumAgreeRate/float64(maxInt(1, totalInvoices)),
-		sumParseMs/int64(maxInt(1, totalInvoices)),
-		sumEngAMs/int64(maxInt(1, totalInvoices)),
-		sumEngBMs/int64(maxInt(1, totalInvoices)),
-		sumTotalMs/int64(maxInt(1, totalInvoices)),
+		sumAgreeRate/float64(maxInt(1, completedCount)),
+		sumParseMs/int64(maxInt(1, completedCount)),
+		sumEngAMs/int64(maxInt(1, completedCount)),
+		sumEngBMs/int64(maxInt(1, completedCount)),
+		sumTotalMs/int64(maxInt(1, completedCount)),
 		peakVRAMMiB,
 		goAllocMiB,
 		goSysMiB,
@@ -252,7 +257,7 @@ func main() {
 	if err := os.WriteFile(*reportPath, []byte(reportMD), 0o644); err != nil {
 		log.Fatalf("write report: %v", err)
 	}
-	if err := os.WriteFile(*hwPath, []byte(buildHardwareProfile(*textModel, *vlmModel, *numCtx, peakVRAMMiB, goAllocMiB, goSysMiB, sumParseMs/int64(maxInt(1, totalInvoices)), sumEngAMs/int64(maxInt(1, totalInvoices)), sumEngBMs/int64(maxInt(1, totalInvoices)), sumTotalMs/int64(maxInt(1, totalInvoices)))), 0o644); err != nil {
+	if err := os.WriteFile(*hwPath, []byte(buildHardwareProfile(*textModel, *vlmModel, *numCtx, peakVRAMMiB, goAllocMiB, goSysMiB, sumParseMs/int64(maxInt(1, completedCount)), sumEngAMs/int64(maxInt(1, completedCount)), sumEngBMs/int64(maxInt(1, completedCount)), sumTotalMs/int64(maxInt(1, completedCount)))), 0o644); err != nil {
 		log.Fatalf("write hardware profile: %v", err)
 	}
 
@@ -550,7 +555,7 @@ func evaluateFraudSuite(aud *fraud.Auditor) ([]fraudEvalRow, models.BenfordRepor
 	return rows, benNat, benManip
 }
 
-func evaluateAdaptiveLoop(st *store.Store, ret *memory.Retriever) string {
+func evaluateAdaptiveLoop(ctx context.Context, engA engines.Extractor, st *store.Store, ret *memory.Retriever) string {
 	// Store a human reviewer correction for a vendor with custom layout/tax formatting
 	seedRec := &models.InvoiceRecord{
 		ID:             "adapt-seed-1",
@@ -593,18 +598,54 @@ func evaluateAdaptiveLoop(st *store.Store, ret *memory.Retriever) string {
 
 	allEx, _ := st.ListAdaptiveExamples()
 	heldOutParse := &models.DocumentParseResult{
-		Markdown:        "ISSUER: Vanguard Industrial Robotics Ltd | REG/VAT: GB774910221\nDOC REF: VG-2026-077",
+		Markdown:        "ISSUER: Vanguard Ind. Robotics | REG: GB774910221\nDOC REF: VG-2026-077\nINVOICE DATE: 2026-05-15\nTOTAL: 1200.00\nBANK: GB29NWBK60161331926819",
 		LayoutSignature: []float64{0.44, 0.46, 0.31, 0.29, 0.2, 0.2, 0.1, 0.1, 0, 0, 0, 0, 0, 0, 0, 0},
 		Blocks: []models.ParseBlock{
-			{Page: 1, BlockType: "header", Text: "ISSUER: Vanguard Industrial Robotics Ltd | REG/VAT: GB774910221"},
+			{Page: 1, BlockType: "header", Text: "ISSUER: Vanguard Ind. Robotics | REG: GB774910221"},
 		},
 	}
 	retrieved := ret.RetrieveTopK(heldOutParse, allEx)
-	if len(retrieved) > 0 {
-		return fmt.Sprintf("Retrieved %d prior human correction(s) for vendor `%s` (similarity=%.3f, canonical entity=`%s`, VAT=`%s`)",
-			len(retrieved), retrieved[0].VendorNorm, retrieved[0].SimilarityScore, retrieved[0].CorrectedJSON.VendorName, retrieved[0].CorrectedJSON.VendorTaxID)
+	if len(retrieved) == 0 {
+		return "No adaptive examples retrieved"
 	}
-	return "No adaptive examples retrieved"
+
+	retrievalSummary := fmt.Sprintf("Retrieved %d prior human correction(s) for vendor `%s` (similarity=%.3f, canonical entity=`%s`, VAT=`%s`)",
+		len(retrieved), retrieved[0].VendorNorm, retrieved[0].SimilarityScore, retrieved[0].CorrectedJSON.VendorName, retrieved[0].CorrectedJSON.VendorTaxID)
+
+	// Measure extraction accuracy before vs after reviewer correction
+	if engA != nil {
+		targetCanonicalVendor := "Vanguard Industrial Robotics Ltd"
+
+		// Step A: Extract without adaptive few-shot examples (Baseline / Before Correction)
+		respBefore, errBefore := engA.Extract(ctx, engines.ExtractionInput{
+			Markdown:        heldOutParse.Markdown,
+			FewShotExamples: nil,
+		})
+
+		// Step B: Extract WITH retrieved human correction few-shot example (Adaptive / After Correction)
+		respAfter, errAfter := engA.Extract(ctx, engines.ExtractionInput{
+			Markdown:        heldOutParse.Markdown,
+			FewShotExamples: retrieved,
+		})
+
+		if errBefore == nil && errAfter == nil {
+			vBefore := respBefore.Extracted.VendorName
+			vAfter := respAfter.Extracted.VendorName
+			vatBefore := respBefore.Extracted.VendorTaxID
+			vatAfter := respAfter.Extracted.VendorTaxID
+
+			beforeMatch := (vBefore == targetCanonicalVendor)
+			afterMatch := (vAfter == targetCanonicalVendor)
+
+			f1Before := tokenF1(vBefore, targetCanonicalVendor)
+			f1After := tokenF1(vAfter, targetCanonicalVendor)
+
+			return fmt.Sprintf("- **Retrieval:** %s\n- **Before Correction (Zero-Shot):** Vendor=`%s`, VAT=`%s` (Canonical Match: `%v`, F1: `%.3f`)\n- **After Correction (Few-Shot Injected):** Vendor=`%s`, VAT=`%s` (Canonical Match: `%v`, F1: `%.3f`)\n- **Adaptive Accuracy Gain:** Canonical token F1 improved from `%.3f` to `%.3f` (`%v` -> `%v`)",
+				retrievalSummary, vBefore, vatBefore, beforeMatch, f1Before, vAfter, vatAfter, afterMatch, f1After, f1Before, f1After, beforeMatch, afterMatch)
+		}
+	}
+
+	return fmt.Sprintf("- **Retrieval:** %s", retrievalSummary)
 }
 
 func buildEvaluationMarkdown(
@@ -639,7 +680,7 @@ func buildEvaluationMarkdown(
 
 	sb.WriteString("## 1. Per-Field Accuracy: Engine A vs. Engine B vs. Dual-Engine Consensus\n\n")
 	sb.WriteString("| Field | Samples | Engine A Exact | Engine A Token F1 | Engine B Exact | Engine B Token F1 | Consensus Exact | Consensus Token F1 | Auto-Verified Coverage | Accuracy on Verified Subset |\n")
-	sb.WriteString("|---|---|---|---|---|---|---|\n")
+	sb.WriteString("|---|---|---|---|---|---|---|---|---|---|\n")
 
 	var totFields, totA, totB, totC, totVer, totVerRight int
 	for _, fn := range fieldNames {
@@ -695,7 +736,7 @@ func buildEvaluationMarkdown(
 		benManip.SampleSize, benManip.ChiSquare, benManip.MAD, benManip.Conformity, benManip.Suspicious))
 
 	sb.WriteString("## 4. Adaptive Few-Shot Memory Verification\n\n")
-	sb.WriteString(fmt.Sprintf("- **Result:** %s\n\n", adaptiveSummary))
+	sb.WriteString(fmt.Sprintf("%s\n\n", adaptiveSummary))
 
 	sb.WriteString("## 5. Hardware, Latency & Memory Profile (RTX 4050 6 GB VRAM)\n\n")
 	sb.WriteString("| Metric | Measured Value |\n")

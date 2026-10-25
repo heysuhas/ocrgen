@@ -271,24 +271,45 @@ func (e *OllamaExtractor) Extract(ctx context.Context, input ExtractionInput) (*
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(e.cfg.BaseURL, "/")+"/api/generate", bytes.NewReader(rawReq))
-	if err != nil {
-		return nil, err
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	var lastErr error
+	var respBytes []byte
 
-	resp, err := e.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("ollama generate request failed: %w", err)
-	}
-	defer resp.Body.Close()
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 1500 * time.Millisecond)
+		}
 
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(e.cfg.BaseURL, "/")+"/api/generate", bytes.NewReader(rawReq))
+		if err != nil {
+			return nil, err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+
+		resp, err := e.httpClient.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("ollama generate request failed (attempt %d): %w", attempt+1, err)
+			continue
+		}
+
+		b, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			lastErr = fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(b))
+			continue
+		}
+
+		respBytes = b
+		lastErr = nil
+		break
 	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama returned status %d: %s", resp.StatusCode, string(respBytes))
+
+	if lastErr != nil {
+		return nil, lastErr
 	}
 
 	var genResp ollamaGenerateResponse

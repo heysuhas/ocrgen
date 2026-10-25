@@ -1,7 +1,6 @@
 # Local runtime data and generated binaries
 /bin/
 /data/
-/eval/reports/
 
 # Python environments and caches
 /.venv/
